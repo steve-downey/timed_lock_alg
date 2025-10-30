@@ -8,6 +8,7 @@
 #include <chrono>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <thread>
 #include <utility>
 
@@ -25,21 +26,21 @@ class JThread : public std::thread {
 };
 } // namespace
 
+using namespace std::chrono_literals;
 namespace tla = beman::timed_lock_alg;
 
-constexpr std::chrono::milliseconds yield(10);
+constexpr auto yield = 10ms;
 
 void foo(std::timed_mutex& m) {
     std::lock_guard lock(m);
-    std::this_thread::sleep_for(std::chrono::milliseconds(40) + yield);
+    std::this_thread::sleep_for(40ms + yield);
 }
 
 int main() {
     std::cout << std::boolalpha;
     std::array<std::timed_mutex, 30> mtxs;
 
-    for (int ms = 10; ms <= 70; ms += 20) { // try 10, 30, 50, 70 ms
-        std::chrono::milliseconds cms(ms);
+    for (auto ms = 10ms; ms <= 70ms; ms += 20ms) { // try 10, 30, 50, 70 ms
         // start a thread that locks the last mutex unless mtxs is empty
         JThread jt = [&]() -> JThread {
             if constexpr (not mtxs.empty()) {
@@ -50,10 +51,10 @@ int main() {
         }();
         std::this_thread::sleep_for(yield);
 
-        std::cout << "trying for " << cms.count() << "ms\n";
+        std::cout << "trying for " << ms.count() << "ms\n";
 
         auto start = std::chrono::steady_clock::now();
-        auto r1    = std::apply([&](auto&... mxs) { return tla::try_lock_for(cms, mxs...); }, mtxs);
+        auto r1    = std::apply([&](auto&... mxs) { return tla::try_lock_for(ms, mxs...); }, mtxs);
         auto end   = std::chrono::steady_clock::now();
 
         // should be done in approx. 10, 30, 40 and 40 ms, where the two last tries succeeds:
