@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-set(ALL_EXAMPLES try_lock_a_bunch)
+set(ALL_EXAMPLES try_lock_a_bunch try_lock_until_success)
 
 message("Examples to be built: ${ALL_EXAMPLES}")
 
