@@ -112,5 +112,154 @@ template <class Rep, class Period, detail::TimedLockable... Ls>
 [[nodiscard]] int try_lock_for(const std::chrono::duration<Rep, Period>& dur, Ls&... ls) {
     return try_lock_until(std::chrono::steady_clock::now() + dur, ls...);
 }
+
+template <detail::BasicLockable... Ms>
+class multi_lock {
+  public:
+    using mutex_type = std::tuple<Ms*...>;
+
+    // Constructors
+    multi_lock() noexcept = default;
+
+    explicit multi_lock(Ms&... ms)
+        requires(sizeof...(Ms) > 0)
+        : m_ms(std::addressof(ms)...) {
+        lock();
+    }
+
+    multi_lock(std::defer_lock_t, Ms&... ms) noexcept : m_ms(std::addressof(ms)...) {}
+
+    multi_lock(std::try_to_lock_t, Ms&... ms)
+        requires(... && detail::Lockable<Ms>)
+        : m_ms(std::addressof(ms)...) {
+        try_lock();
+    }
+
+    multi_lock(std::adopt_lock_t, Ms&... ms) noexcept : m_ms(std::addressof(ms)...), m_locked(true) {}
+
+    template <class Rep, class Period>
+        requires(... && detail::TimedLockable<Ms>)
+    multi_lock(const std::chrono::duration<Rep, Period>& dur, Ms&... ms) : m_ms(std::addressof(ms)...) {
+        try_lock_for(dur);
+    }
+
+    template <class Clock, class Duration>
+        requires(... && detail::TimedLockable<Ms>)
+    multi_lock(const std::chrono::time_point<Clock, Duration>& tp, Ms&... ms) : m_ms(std::addressof(ms)...) {
+        try_lock_until(tp);
+    }
+
+    // Destructor
+    ~multi_lock() {
+        if (m_locked)
+            unlock();
+    }
+
+    // Move operations
+    multi_lock(multi_lock&& other) noexcept
+        : m_ms(std::exchange(other.m_ms, std::tuple<Ms*...>{})), m_locked(std::exchange(other.m_locked, false)) {}
+
+    multi_lock& operator=(multi_lock&& other) noexcept {
+        multi_lock(std::move(other)).swap(*this);
+        return *this;
+    }
+
+    // Deleted copy operations
+    multi_lock(const multi_lock&)            = delete;
+    multi_lock& operator=(const multi_lock&) = delete;
+
+    // Locking operations
+  private:
+    void lock_check() {
+        if (m_locked) {
+            throw std::system_error(std::make_error_code(std::errc::resource_deadlock_would_occur));
+        }
+        if constexpr (sizeof...(Ms) != 0) {
+            if (std::get<0>(m_ms) == nullptr) {
+                throw std::system_error(std::make_error_code(std::errc::operation_not_permitted));
+            }
+        }
+    }
+
+  public:
+    void lock()
+        requires(sizeof...(Ms) == 1 || (... && detail::Lockable<Ms>))
+    {
+        lock_check();
+        if constexpr (sizeof...(Ms) == 1) {
+            std::get<sizeof...(Ms) - 1>(m_ms)->lock();
+        } else if constexpr (sizeof...(Ms) > 1) {
+            std::apply([](auto... ms) { std::lock(*ms...); }, m_ms);
+        }
+        m_locked = true;
+    }
+
+    int try_lock()
+        requires(... && detail::Lockable<Ms>)
+    {
+        lock_check();
+        int rv;
+        if constexpr (sizeof...(Ms) == 0) {
+            rv = -1;
+        } else if constexpr (sizeof...(Ms) == 1) {
+            rv = -static_cast<int>(std::get<sizeof...(Ms) - 1>(m_ms)->try_lock());
+        } else {
+            rv = std::apply([](auto... ms) { return std::try_lock(*ms...); }, m_ms);
+        }
+        m_locked = rv == -1;
+        return rv;
+    }
+
+    template <class Rep, class Period>
+        requires(... && detail::TimedLockable<Ms>)
+    int try_lock_for(const std::chrono::duration<Rep, Period>& dur) {
+        lock_check();
+        int rv   = std::apply([&](auto... ms) { return beman::timed_lock_alg::try_lock_for(dur, *ms...); }, m_ms);
+        m_locked = rv == -1;
+        return rv;
+    }
+
+    template <class Clock, class Duration>
+        requires(... && detail::TimedLockable<Ms>)
+    int try_lock_until(const std::chrono::time_point<Clock, Duration>& tp) {
+        lock_check();
+        int rv   = std::apply([&](auto... ms) { return beman::timed_lock_alg::try_lock_until(tp, *ms...); }, m_ms);
+        m_locked = rv == -1;
+        return rv;
+    }
+
+    void unlock() {
+        if (not m_locked) {
+            throw std::system_error(std::make_error_code(std::errc::operation_not_permitted));
+        }
+        auto unlocker = std::apply([](auto... ms) { return std::scoped_lock(std::adopt_lock, *ms...); }, m_ms);
+        m_locked      = false;
+    }
+
+    // Modifiers
+    void swap(multi_lock& other) noexcept {
+        std::swap(m_ms, other.m_ms);
+        std::swap(m_locked, other.m_locked);
+    }
+
+    mutex_type release() noexcept {
+        m_locked = false;
+        return std::exchange(m_ms, mutex_type{});
+    }
+
+    // Observers
+    std::tuple<Ms*...> mutex() const noexcept { return m_ms; }
+    bool               owns_lock() const noexcept { return m_locked; }
+    explicit           operator bool() const noexcept { return m_locked; }
+
+  private:
+    mutex_type m_ms;
+    bool       m_locked = false;
+};
+
+template <class... Ms>
+void swap(multi_lock<Ms...>& lhs, multi_lock<Ms...>& rhs) noexcept {
+    lhs.swap(rhs);
+}
 } // namespace beman::timed_lock_alg
 #endif

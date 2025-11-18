@@ -7,9 +7,9 @@ SPDX-License-Identifier: MIT
 <!-- markdownlint-disable-next-line line-length -->
 ![Library Status](https://github.com/bemanproject/beman/blob/main/images/badges/beman_badge-beman_library_under_development.svg) ![Continuous Integration Tests](https://github.com/bemanproject/timed_lock_alg/actions/workflows/ci_tests.yml/badge.svg) ![Lint Check (pre-commit)](https://github.com/bemanproject/timed_lock_alg/actions/workflows/pre-commit-check.yml/badge.svg) [![Coverage](https://coveralls.io/repos/github/bemanproject/timed_lock_alg/badge.svg?branch=main)](https://coveralls.io/github/bemanproject/timed_lock_alg?branch=main) ![Standard Target](https://github.com/bemanproject/beman/blob/main/images/badges/cpp29.svg) [![Compiler Explorer Example](https://img.shields.io/badge/Try%20it%20on%20Compiler%20Explorer-grey?logo=compilerexplorer&logoColor=67c52a)](https://godbolt.org/z/jPYdxT3E7)
 
-`beman.timed_lock_alg` implements timed lock algorithms for multiple lockables.
+`beman.timed_lock_alg` implements timed lock algorithms for multiple lockables and `std::multi_lock`.
 
-**Implements**: `std::try_lock_until` and `std::try_lock_for` proposed in [Timed lock algorithms for multiple lockables (P3832R0)](https://wg21.link/P3832R0).
+**Implements**: `std::try_lock_until` and `std::try_lock_for` proposed in [Timed lock algorithms for multiple lockables (P3832R0)](https://wg21.link/P3832R0) and `std::multi_lock` proposed in [`std::multi_lock` (P3833R0)](https://wg21.link/P3832R0)
 
 **Status**: [Under development and not yet ready for production use.](https://github.com/bemanproject/beman/blob/main/docs/beman_library_maturity_model.md#under-development-and-not-yet-ready-for-production-use)
 
@@ -30,6 +30,17 @@ if (std::try_lock_for(100ms, m1, m2) == -1) {
     // ...
 } else {
     // failed to acquire within timeout
+}
+```
+
+`std::multi_lock` is a flexible RAII container usable with zero to many _BasicLockables_.
+
+Example:
+```
+std::timed_mutex m1, m2;
+std::multi_lock lock(100ms, m1, m2);
+if (lock) {
+    // lock acquired within timeout
 }
 ```
 

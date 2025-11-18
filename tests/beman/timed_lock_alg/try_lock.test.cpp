@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 
 #include <beman/timed_lock_alg/mutex.hpp>
+#include "mock_timed_mutex.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <chrono>
-#include <functional>
-#include <future>
+#include <mutex>
+#include <thread>
 #include <tuple>
 
 using namespace std::chrono_literals;
-namespace tla = beman::timed_lock_alg;
+namespace tla   = beman::timed_lock_alg;
+using MockMutex = beman::timed_lock_alg::test::MockTimedMutex;
 
 namespace {
 // joining thread for implementations missing std::jthread
@@ -35,14 +37,17 @@ void unlocker(std::array<MutexType, N>& mtxs) {
 }
 } // namespace
 
-TEST(Mutex, try_zero) {
+// ============================================================================
+// Basic Tests with Mock Mutexes (fast, deterministic)
+// ============================================================================
+
+TEST(TryLock, ZeroMutexes) {
     EXPECT_EQ(-1, tla::try_lock_until(now));
     EXPECT_EQ(-1, tla::try_lock_for(no_duration));
 }
 
-TEST(Mutex, try_one_unlocked) {
-    std::timed_mutex mtx;
-
+TEST(TryLock, OneMutexUnlocked) {
+    MockMutex mtx;
     EXPECT_EQ(-1, tla::try_lock_until(now, mtx));
     mtx.unlock();
 
@@ -50,7 +55,58 @@ TEST(Mutex, try_one_unlocked) {
     mtx.unlock();
 }
 
-TEST(Mutex, try_many_unlocked) {
+TEST(TryLock, ManyMutexesUnlocked) {
+    std::array<MockMutex, 30> mtxs;
+
+    EXPECT_EQ(-1, std::apply([](auto&... mts) { return tla::try_lock_until(now, mts...); }, mtxs));
+    unlocker(mtxs);
+
+    EXPECT_EQ(-1, std::apply([](auto&... mts) { return tla::try_lock_for(no_duration, mts...); }, mtxs));
+    unlocker(mtxs);
+}
+
+TEST(TryLock, OneMutexLocked) {
+    MockMutex mtx;
+    mtx.should_fail = true;
+    EXPECT_EQ(0, tla::try_lock_until(now, mtx));
+    EXPECT_EQ(0, tla::try_lock_for(no_duration, mtx));
+}
+
+TEST(TryLock, ManyMutexesOneLockedFirst) {
+    std::array<MockMutex, 3> mtxs;
+    mtxs[0].should_fail = true;
+    int result          = std::apply([](auto&... mts) { return tla::try_lock_for(no_duration, mts...); }, mtxs);
+    EXPECT_EQ(0, result);
+}
+
+TEST(TryLock, ManyMutexesOneLockedMiddle) {
+    std::array<MockMutex, 3> mtxs;
+    mtxs[1].should_fail = true;
+    int result          = std::apply([](auto&... mts) { return tla::try_lock_for(no_duration, mts...); }, mtxs);
+    EXPECT_EQ(1, result);
+}
+
+TEST(TryLock, ManyMutexesOneLockedLast) {
+    std::array<MockMutex, 3> mtxs;
+    mtxs[2].should_fail = true;
+    int result          = std::apply([](auto&... mts) { return tla::try_lock_for(no_duration, mts...); }, mtxs);
+    EXPECT_EQ(2, result);
+}
+
+// ============================================================================
+// Integration Tests with Real Mutexes (verify actual threading behavior)
+// ============================================================================
+
+TEST(TryLockIntegration, RealMutexBasic) {
+    std::timed_mutex mtx;
+    EXPECT_EQ(-1, tla::try_lock_until(now, mtx));
+    mtx.unlock();
+
+    EXPECT_EQ(-1, tla::try_lock_for(no_duration, mtx));
+    mtx.unlock();
+}
+
+TEST(TryLockIntegration, ManyRealMutexesUnlocked) {
     std::array<std::timed_mutex, 30> mtxs;
 
     EXPECT_EQ(-1, std::apply([](auto&... mts) { return tla::try_lock_until(now, mts...); }, mtxs));
@@ -60,7 +116,7 @@ TEST(Mutex, try_many_unlocked) {
     unlocker(mtxs);
 }
 
-TEST(Mutex, try_many_one_locked) {
+TEST(TryLockIntegration, ManyMutexesOneLockedWithTimeout) {
     std::array<std::timed_mutex, 30> mtxs;
     auto                             th = JThread([&] {
         std::lock_guard lg(mtxs.back());
@@ -73,7 +129,7 @@ TEST(Mutex, try_many_one_locked) {
     unlocker(mtxs);
 }
 
-TEST(Mutex, return_last_failed) {
+TEST(TryLockIntegration, ReturnLastFailed) {
     std::array<std::timed_mutex, 2> mtxs;
     auto                            th = JThread([&] {
         std::lock(mtxs[0], mtxs[1]);
@@ -89,7 +145,7 @@ TEST(Mutex, return_last_failed) {
     EXPECT_EQ(1, std::apply([](auto&... mts) { return tla::try_lock_for(200ms, mts...); }, mtxs));
 }
 
-TEST(Mutex, succeed_with_three_in_tricky_sequence) {
+TEST(TryLockIntegration, SucceedWithThreeInTrickySequence) {
     // The comments in this test are on implementation details.
     // A different implementation may behave differently but should
     // still succeed in locking all three in time.
