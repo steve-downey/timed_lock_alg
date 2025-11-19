@@ -232,8 +232,11 @@ class multi_lock {
         if (not m_locked) {
             throw std::system_error(std::make_error_code(std::errc::operation_not_permitted));
         }
-        auto unlocker = std::apply([](auto... ms) { return std::scoped_lock(std::adopt_lock, *ms...); }, m_ms);
-        m_locked      = false;
+        // clang doesn't seem to understand that "unlocker" is actually used to unlock all mutexes at the end of the
+        // scope even if one of them throws so mark it as maybe_unused.
+        [[maybe_unused]] auto unlocker =
+            std::apply([](auto... ms) { return std::scoped_lock(std::adopt_lock, *ms...); }, m_ms);
+        m_locked = false;
     }
 
     // Modifiers
