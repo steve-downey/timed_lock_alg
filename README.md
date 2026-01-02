@@ -9,7 +9,7 @@ SPDX-License-Identifier: MIT
 
 `beman.timed_lock_alg` implements timed lock algorithms for multiple lockables and `std::multi_lock`.
 
-**Implements**: `std::try_lock_until` and `std::try_lock_for` proposed in [Timed lock algorithms for multiple lockables (P3832R0)](https://wg21.link/P3832R0) and `std::multi_lock` proposed in [`std::multi_lock` (P3833R0)](https://isocpp.org/files/papers/P3833R0.html)
+**Implements**: `std::try_lock_until` and `std::try_lock_for` proposed in [Timed lock algorithms for multiple lockables (P3832R0)](https://wg21.link/P3832R0) and `std::multi_lock` proposed in [`std::multi_lock` (P3833R0)](https://wg21.link/P3833R0)
 
 **Status**: [Under development and not yet ready for production use.](https://github.com/bemanproject/beman/blob/main/docs/beman_library_maturity_model.md#under-development-and-not-yet-ready-for-production-use)
 
