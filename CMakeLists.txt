@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.28)
 
 project(
     beman.timed_lock_alg # CMake Project Name, which is also the name of the top-level
